@@ -2,7 +2,7 @@
 
 Audio MCP gives coding agents local tools for producing audio assets. The project goal is to let an agent compose, edit, verify, and export music and sound effects for apps, games, and videos.
 
-Version 0.1.0 implements the first workflow: generate a short UI sound, check its audio properties, and hand the client a playable WAV file. The TypeScript server communicates over MCP stdio and synthesizes the waveform locally. After installation, this workflow runs offline without API keys, external codecs, or sample downloads.
+Generate editable MIDI for solo piano, or synthesize a short UI sound and check the resulting WAV. The TypeScript server communicates over MCP stdio and synthesizes the waveform locally. All tools run offline after setup. MIDI rendering uses local FluidSynth, FFmpeg, and a piano sound bank.
 
 ## Build and verify
 
@@ -39,16 +39,28 @@ For clients using JSON configuration, including Claude Code project configuratio
 }
 ```
 
-With no environment override, the server uses an `audio-assets` directory under its working directory. WAV files persist across server restarts. Remove unwanted files from that directory to reclaim disk space.
+With no environment override, the server uses an `audio-assets` directory under its working directory. MIDI and WAV files persist across server restarts. Remove unwanted files from that directory to reclaim disk space.
 
 ## Tools
 
 | Tool | Input | Result |
 | --- | --- | --- |
+| audio_generate_piano | Optional `duration_seconds` (1–300, default 30), integer `bpm` (40–240, default 80), and integer `seed` (0–4294967295, default 1). | A C major Standard MIDI File with two editable piano parts, its absolute path and asset ID. |
 | audio_generate_sfx | Required `effect` (click, hover, success, error, whoosh). Optional `duration_seconds` from 0.02 to 3. | A 44.1 kHz mono 16-bit PCM WAV, its absolute path, asset ID and measured audio properties. |
-| audio_analyze | Required `asset_id` from a generation result. | Duration, sample rate, channels, normalized peak amplitude and a digital silence flag. |
+| audio_render | Required `asset_id` from `audio_generate_piano`. | A stereo 44.1 kHz 16-bit PCM WAV, its asset ID, absolute path, and measured properties. |
+| audio_analyze | Required `asset_id` from a WAV generation result. | Duration, sample rate, channels, normalized peak amplitude and a digital silence flag. |
 
 For example, call `audio_generate_sfx` with `{"effect":"success","duration_seconds":0.45}`, then pass the returned `assets[0].asset_id` to `audio_analyze`. Calls return structured content and equivalent JSON text. Invalid inputs and unreadable assets produce MCP errors.
+
+For piano, call `audio_generate_piano` with `{"duration_seconds":30,"bpm":80,"seed":42}`. Open the returned `.mid` file in a DAW or MIDI player with a General MIDI synthesizer. Both hands use acoustic grand piano. Repeating the parameters reproduces the MIDI bytes.
+
+## Render piano MIDI to WAV
+
+Install FluidSynth and FFmpeg and make both executables available on the MCP server's PATH. On macOS the renderer defaults to the system General MIDI DLS bank. Use a FluidSynth build with DLS support or configure a local GM-compatible SF2 bank. On other platforms set `AUDIO_MCP_SOUNDFONT` to its absolute path in the server environment. Reconnect the client after changing server configuration.
+
+In Codex CLI, ask “Generate 30 seconds of piano, render it to WAV using audio_render, and give me the WAV path.” To reuse an existing piece, call `audio_render` with `{"asset_id":"<MIDI asset UUID>"}` in the same workspace. Use the MIDI result’s `assets[0].asset_id` as the render input. The render result includes the original ID in `source_asset_id` and a new WAV ID in `assets[0].asset_id`. Pass the WAV ID to `audio_analyze` to read back the duration, channel count, and peak amplitude.
+
+Rendering handles the fixed-tempo MIDI produced by this server, retains its duration, and applies a 150 ms ending fade and a peak limiter. One render runs per server at a time. Each external command has a 60-second timeout. For the real synthesis integration check, run `AUDIO_MCP_TEST_RENDER=1 npm test` with the render dependencies installed.
 
 ## Development
 
@@ -60,7 +72,7 @@ For example, call `audio_generate_sfx` with `{"effect":"success","duration_secon
 
 | Area | Planned outcome |
 | --- | --- |
-| Composition and MIDI | Generate editable MIDI and piano-only pieces with reproducible presets and instrument selection. |
+| Composition and MIDI | Expand the piano generator with style presets, additional keys and multi-instrument composition. |
 | Audio production | Render background music, create seamless loops, trim, fade, normalize, mix, and export additional formats. |
 | Long renders | Run rendering in a worker with progress, cancellation, and timeouts. |
 | Release verification | Exercise the supported workflows on macOS, Linux, and Windows and audit the distribution licenses of dependencies and sound assets before claiming commercial readiness. |

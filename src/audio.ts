@@ -48,18 +48,20 @@ export function synthesize(effect: Effect, seconds = durations[effect]) {
   return wav;
 }
 
-// The asset store accepts only the canonical mono PCM format emitted above.
+// Both generators emit canonical 44-byte PCM headers.
 export function analyze(wav: Buffer) {
-  const frames = (wav.length - 44) / 2;
+  if (wav.length < 44) throw new Error("Invalid WAV header");
+  const channels = wav.readUInt16LE(22);
+  const frames = (wav.length - 44) / (channels * 2);
   if (frames < 1 || !Number.isInteger(frames) ||
       wav.toString("ascii", 0, 4) !== "RIFF" ||
       wav.readUInt32LE(4) !== wav.length - 8 ||
       wav.toString("ascii", 8, 16) !== "WAVEfmt " ||
       wav.readUInt32LE(16) !== 16 || wav.readUInt16LE(20) !== 1 ||
-      wav.readUInt16LE(22) !== 1 || wav.readUInt32LE(24) !== sampleRate ||
-      wav.readUInt32LE(28) !== sampleRate * 2 || wav.readUInt16LE(32) !== 2 ||
+      (channels !== 1 && channels !== 2) || wav.readUInt32LE(24) !== sampleRate ||
+      wav.readUInt32LE(28) !== sampleRate * channels * 2 || wav.readUInt16LE(32) !== channels * 2 ||
       wav.readUInt16LE(34) !== 16 || wav.toString("ascii", 36, 40) !== "data" ||
-      wav.readUInt32LE(40) !== frames * 2) {
+      wav.readUInt32LE(40) !== wav.length - 44) {
     throw new Error("Invalid or unsupported Audio MCP WAV asset");
   }
   let peak = 0;
@@ -67,5 +69,5 @@ export function analyze(wav: Buffer) {
     peak = Math.max(peak, Math.abs(wav.readInt16LE(offset)));
   }
   return { duration_seconds: frames / sampleRate, sample_rate_hz: sampleRate,
-    channels: 1, peak_amplitude: peak / 32768, silent: peak === 0 };
+    channels, peak_amplitude: peak / 32768, silent: peak === 0 };
 }
