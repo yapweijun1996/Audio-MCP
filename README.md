@@ -17,6 +17,23 @@ The test builds the server, launches it as a child process, discovers its tools 
 
 Before using a build in production, review the verified environments, outstanding checks, and rollback procedure in the [production readiness checklist](docs/production-readiness.md).
 
+## Produce a music cue
+
+Ask your MCP client to “produce a 16-bar night-drive instrumental with stems”. The `audio_produce_music` tool composes an intro, theme, lift and resolved ending, synthesizes four parts, and masters the stereo mix. It runs locally with Node.js and FFmpeg on PATH. Its instruments use oscillators and synthesized percussion. It requires no sound bank, model download or paid API.
+
+| Style | Sound | Full-length preview |
+| --- | --- | --- |
+| `velvet_keys` | Swung electric keys, rounded bass and a soft lead. Default 86 BPM. | [Velvet Keys · 45 s](examples/production/velvet-keys.mp3) |
+| `night_drive` | A straight electronic pulse with syncopated bass and a brighter hook. Default 112 BPM. | [Night Drive · 34 s](examples/production/night-drive.mp3) |
+
+```json
+{"style":"night_drive","bars":16,"seed":42,"include_stems":true}
+```
+
+Choose 8, 16 or 32 bars and optionally set `bpm` from 72 to 128. The default is a 16-bar `velvet_keys` cue with seed 1. The same inputs reproduce the score. In the result, select assets by `role`. Use `master` for the finished 48 kHz, 24-bit stereo WAV and `score` for editable multitrack MIDI. Optional `drums`, `bass`, `keys` and `lead` WAVs start at the same sample and end together. Import the four stems at time zero for remixing. They include their individual effects and precede master-bus processing.
+
+Each master is measured after export. The project targets −16 LUFS for Velvet Keys and −14 LUFS for Night Drive. Delivery requires integrated loudness within 1 LU of the style target and true peak at or below −1 dBTP. The result includes both measurements and the section start bars. Pass any returned WAV ID to `audio_analyze` for duration, channel count and sample peak. [FFmpeg loudness measurement](https://ffmpeg.org/ffmpeg-filters.html#loudnorm)
+
 ## Connect a client
 
 Launch the compiled entry point directly so stdout carries only protocol messages. Replace the example paths with absolute local paths. Use a private, writable directory for generated assets.
@@ -47,6 +64,7 @@ With no environment override, the server uses an `audio-assets` directory under 
 
 | Tool | Input | Result |
 | --- | --- | --- |
+| audio_produce_music | Optional `style`, `bars`, `bpm`, `seed` and `include_stems`. | Master WAV, editable MIDI, optional four WAV stems, arrangement and measured loudness. |
 | audio_generate_piano | Optional `duration_seconds` (1–300, default 30), integer `bpm` (40–240, default 80), and integer `seed` (0–4294967295, default 1). | A C major Standard MIDI File with two editable piano parts, its absolute path and asset ID. |
 | audio_generate_sfx | Required `effect` (click, hover, success, error, whoosh). Optional `duration_seconds` from 0.02 to 3. | A 44.1 kHz mono 16-bit PCM WAV, its absolute path, asset ID and measured audio properties. |
 | audio_render | Required `asset_id` from `audio_generate_piano`. | A stereo 44.1 kHz 16-bit PCM WAV, its asset ID, absolute path, and measured properties. |
@@ -74,7 +92,7 @@ Rendering handles the fixed-tempo MIDI produced by this server, retains its dura
 
 | Area | Planned outcome |
 | --- | --- |
-| Composition and MIDI | Expand the piano generator with style presets, additional keys and multi-instrument composition. |
-| Audio production | Render background music, create seamless loops, trim, fade, normalize, mix, and export additional formats. |
-| Long renders | Run rendering in a worker with progress, cancellation, and timeouts. |
+| Composition and MIDI | Expand cue styles and add controls for harmony and instrumentation. |
+| Audio production | Add seamless loop delivery, editing of existing assets and additional export formats. |
+| Long renders | Add progress reporting and queued jobs for long renders. |
 | Release verification | Exercise the supported workflows on macOS, Linux, and Windows and audit the distribution licenses of dependencies and sound assets before claiming commercial readiness. |

@@ -21,7 +21,7 @@ test("generate piano MIDI and verify sound effects over stdio", async t => {
   await client.connect(transport);
   t.after(() => client.close());
   const names = (await client.listTools()).tools.map(tool => tool.name);
-  assert.deepEqual(names.sort(), ["audio_analyze", "audio_generate_piano", "audio_generate_sfx", "audio_render"]);
+  assert.deepEqual(names.sort(), ["audio_analyze", "audio_generate_piano", "audio_generate_sfx", "audio_produce_music", "audio_render"]);
   const call = (name, args) => client.callTool({ name, arguments: args });
   const files = [];
   for (const effect of ["click", "hover", "success", "error", "whoosh"]) {

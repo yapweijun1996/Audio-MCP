@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
+import { runProgram } from "./program.js";
 import { parseMidi } from "midi-file";
 import { analyze } from "./audio.js";
 
-const execute = promisify(execFile);
 const macPianoBank = "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls";
 export const maxRenderSeconds = 300.01;
 
@@ -28,17 +26,6 @@ function pianoDuration(midi: Buffer) {
   return seconds;
 }
 
-async function run(program: string, args: string[], signal: AbortSignal) {
-  try {
-    await execute(program, args, { timeout: 60000, killSignal: "SIGKILL", signal, maxBuffer: 128 * 1024 });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error("Install " + program + " and make it available on the MCP server PATH");
-    }
-    throw error;
-  }
-}
-
 export async function renderPiano(root: string, midi: Buffer, signal: AbortSignal) {
   const seconds = pianoDuration(midi);
   const bank = process.env.AUDIO_MCP_SOUNDFONT || (process.platform === "darwin" ? macPianoBank : "");
@@ -50,11 +37,11 @@ export async function renderPiano(root: string, midi: Buffer, signal: AbortSigna
     const raw = join(dir, "synth.wav");
     const output = join(dir, "output.wav");
     await writeFile(input, midi);
-    await run("fluidsynth", ["-ni", "-F", raw, "-T", "wav", "-r", "44100", bank, input], signal);
+    await runProgram("fluidsynth", ["-ni", "-F", raw, "-T", "wav", "-r", "44100", bank, input], signal);
     const fade = Math.min(0.15, seconds);
     const filter = "volume=25dB,alimiter=limit=0.94:level=0:latency=1,afade=t=out:st=" +
       (seconds - fade) + ":d=" + fade;
-    await run("ffmpeg", ["-nostdin", "-v", "error", "-i", raw, "-t", String(seconds),
+    await runProgram("ffmpeg", ["-nostdin", "-v", "error", "-i", raw, "-t", String(seconds),
       "-af", filter, "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", "-fflags", "+bitexact", output], signal);
     const wav = await readFile(output);
     const validation = analyze(wav);

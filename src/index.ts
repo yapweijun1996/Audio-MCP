@@ -8,6 +8,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { analyze, effects, synthesize } from "./audio.js";
 import { composePiano } from "./piano.js";
+import { withRenderSlot } from "./program.js";
+import { produceMusic } from "./produce.js";
+import { musicStyles } from "./score.js";
 
 import { renderPiano, maxRenderSeconds } from "./render.js";
 
@@ -74,22 +77,15 @@ async function readAsset(asset_id: string, extension: ".wav" | ".mid", limit: nu
   }
 }
 
-let rendering = false;
 server.registerTool("audio_render", {
   description: "Render an audio_generate_piano MIDI asset to a stereo PCM WAV using the local sound bank.",
   inputSchema: { asset_id: z.uuid() },
-}, async ({ asset_id }, { signal }) => {
-  if (rendering) throw new Error("A render is already running. Retry when it completes.");
-  rendering = true;
-  try {
-    const midi = await readAsset(asset_id, ".mid", 128 * 1024);
-    const { wav, validation } = await renderPiano(root, midi, signal);
-    const asset = await saveAsset("wav", wav);
-    return result({ status: "completed", source_asset_id: asset_id, assets: [asset], validation });
-  } finally {
-    rendering = false;
-  }
-});
+}, ({ asset_id }, { signal }) => withRenderSlot(async () => {
+  const midi = await readAsset(asset_id, ".mid", 128 * 1024);
+  const { wav, validation } = await renderPiano(root, midi, signal);
+  const asset = await saveAsset("wav", wav);
+  return result({ status: "completed", source_asset_id: asset_id, assets: [asset], validation });
+}));
 
 server.registerTool("audio_analyze", {
   description: "Measure a previously generated WAV by its asset ID in the configured workspace.",
@@ -98,5 +94,16 @@ server.registerTool("audio_analyze", {
   const wav = await readAsset(asset_id, ".wav", 44 + Math.ceil(maxRenderSeconds * 44100) * 4);
   return result({ asset_id, ...analyze(wav) });
 });
+
+server.registerTool("audio_produce_music", {
+  description: "Produce an arranged instrumental cue, a mastered stereo WAV and editable MIDI. Optional stems are aligned for mixing in a DAW.",
+  inputSchema: {
+    style: z.enum(musicStyles).default("velvet_keys").describe("Relaxed electric keys or driving electronic score"),
+    bars: z.union([z.literal(8), z.literal(16), z.literal(32)]).default(16),
+    bpm: z.number().int().min(72).max(128).optional().describe("Defaults to 86 for velvet_keys or 112 for night_drive"),
+    seed: midiOptions.seed,
+    include_stems: z.boolean().default(false),
+  },
+}, (request, { signal }) => withRenderSlot(async () => result(await produceMusic(root, request, signal))));
 
 await server.connect(new StdioServerTransport());

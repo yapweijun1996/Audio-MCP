@@ -1,6 +1,21 @@
 # Production readiness checklist
 
-Use this checklist for a trusted local MCP client that launches Audio MCP over stdio, with one OS account owning the asset directory. There are two paths to qualify. Piano MIDI and sound effects run in Node.js. Rendering piano MIDI to stereo WAV also requires FluidSynth, FFmpeg and a readable General MIDI sound bank.
+Use this checklist for a trusted local MCP client that launches Audio MCP over stdio, with one OS account owning the asset directory. Piano MIDI and sound effects run in Node.js. Piano MIDI rendering adds FluidSynth, FFmpeg and a readable General MIDI sound bank. The arranged music producer uses Node.js and FFmpeg with the `loudnorm` filter.
+
+## Arranged music acceptance
+
+On macOS arm64 with Node 24.21.0 and FFmpeg 8.1.2, the stdio client produced both 16-bar previews below and read back the master and four stems by asset ID. The delivered WAVs use stereo 48 kHz, 24-bit PCM. Measurements are from the final WAVs before encoding the MP3 previews.
+
+| Cue | Seed | BPM | Duration | Integrated loudness | True peak |
+| --- | --- | --- | --- | --- | --- |
+| [Velvet Keys](../examples/production/velvet-keys.mp3) | 17 | 86 | 44.65 s | −16.01 LUFS | −1.85 dBTP |
+| [Night Drive](../examples/production/night-drive.mp3) | 42 | 112 | 34.29 s | −14.01 LUFS | −1.48 dBTP |
+
+A separate macOS run on Node 22.23.5 produced the longest supported cue (32 bars at 72 BPM, 106.67 seconds, including stems) and the shortest (8 bars at 128 BPM, 15 seconds). Both passed the delivery limits.
+
+Run `AUDIO_MCP_TEST_PRODUCTION=1 npm test` for this delivery path. The integration test exercises both styles, WAV readback, overlapping calls, client cancellation, retry and cleanup after missing FFmpeg. Each server process shares one render slot between MIDI rendering and music production. Budget temporary space for the float mix, master and requested stems. Each 48 kHz stereo 24-bit WAV uses 288,000 bytes per second plus its header. If the process is forcibly terminated, inspect `.produce-*` directories with the server stopped.
+
+The supplied producer sounds are synthesized from the score without third-party samples or banks. Verify client-specific deliverable requirements and any rights to added samples or performances when preparing a remix. [Production tool and asset guide](../README.md#produce-a-music-cue)
 
 ## Verified baseline
 
@@ -14,7 +29,7 @@ On 2026-11-22, the following checks passed on macOS 27.2 arm64 at [commit `48e6a
 | Workspace and failure handling | The new workspace had mode `0700` and the finished WAV had mode `0600`. With a missing bank, rendering returned a tool error and SFX generation and analysis still worked. The suite also rejected damaged WAV data, invalid IDs and a symlinked WAV on macOS. |
 | npm advisories | Full `npm audit` and `npm audit --omit=dev` each reported zero known vulnerabilities for the locked tree on the review date. Repeat the audit for each candidate. Native executables and the sound bank need their own review. [npm audit](https://docs.npmjs.com/cli/v10/commands/npm-audit/) |
 
-Linux and Windows qualification, recovery from interrupted writes or renders, and commercial distribution clearance remain open.
+Linux and Windows qualification, abrupt process termination during file writes, and commercial distribution clearance for the project remain open.
 
 ## Qualify a candidate on its target host
 
