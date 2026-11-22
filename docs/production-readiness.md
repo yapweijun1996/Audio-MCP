@@ -11,7 +11,7 @@ On macOS arm64 with Node 24.21.0 and FFmpeg 8.1.2, the stdio client produced bot
 | [Velvet Keys](../examples/production/velvet-keys.mp3) | 17 | 86 | 44.65 s | −16.01 LUFS | −1.85 dBTP |
 | [Night Drive](../examples/production/night-drive.mp3) | 42 | 112 | 34.29 s | −14.01 LUFS | −1.48 dBTP |
 
-A separate macOS run on Node 22.23.5 produced the longest supported cue (32 bars at 72 BPM, 106.67 seconds, including stems) and the shortest (8 bars at 128 BPM, 15 seconds). Both passed the delivery limits.
+A separate macOS run on Node 22.23.5 produced the longest supported cue (32 bars at 72 BPM, 106.67 seconds, including stems) and the shortest (8 bars at 128 BPM, 15 seconds). Both passed the delivery limits. A clean checkout of [the producer revision](https://github.com/yapweijun1996/Audio-MCP/commit/5a857fe5f8d38536b4d848b36d7531bbdf22c361) on Linux arm64 with Node 22.23.3 and FFmpeg 6.1.1 also passed all five tests with `AUDIO_MCP_TEST_PRODUCTION=1`. This Linux run covered the synthesized producer and the base stdio suite. The optional FluidSynth piano render was outside that run.
 
 Run `AUDIO_MCP_TEST_PRODUCTION=1 npm test` for this delivery path. The integration test exercises both styles, WAV readback, overlapping calls, client cancellation, retry and cleanup after missing FFmpeg. Each server process shares one render slot between MIDI rendering and music production. Budget temporary space for the float mix, master and requested stems. Each 48 kHz stereo 24-bit WAV uses 288,000 bytes per second plus its header. If the process is forcibly terminated, inspect `.produce-*` directories with the server stopped.
 
@@ -29,7 +29,7 @@ On 2026-11-22, the following checks passed on macOS 27.2 arm64 at [commit `48e6a
 | Workspace and failure handling | The new workspace had mode `0700` and the finished WAV had mode `0600`. With a missing bank, rendering returned a tool error and SFX generation and analysis still worked. The suite also rejected damaged WAV data, invalid IDs and a symlinked WAV on macOS. |
 | npm advisories | Full `npm audit` and `npm audit --omit=dev` each reported zero known vulnerabilities for the locked tree on the review date. Repeat the audit for each candidate. Native executables and the sound bank need their own review. [npm audit](https://docs.npmjs.com/cli/v10/commands/npm-audit/) |
 
-Linux and Windows qualification, abrupt process termination during file writes, and commercial distribution clearance for the project remain open.
+Linux qualification for the FluidSynth path, Windows qualification, abrupt process termination during file writes, and commercial distribution clearance for the project remain open.
 
 ## Qualify a candidate on its target host
 
