@@ -15,6 +15,8 @@ npm test
 
 The test builds the server, launches it as a child process, discovers its tools and checks the generated audio. To build without running tests, use `npm run build`.
 
+Before using a build in production, review the verified environments, outstanding checks, and rollback procedure in the [production readiness checklist](docs/production-readiness.md).
+
 ## Connect a client
 
 Launch the compiled entry point directly so stdout carries only protocol messages. Replace the example paths with absolute local paths. Use a private, writable directory for generated assets.
