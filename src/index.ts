@@ -7,12 +7,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { analyze, effects, synthesize } from "./audio.js";
+import { composeInstrument, drumPatterns, instruments } from "./instruments.js";
 import { composePiano } from "./piano.js";
 import { withRenderSlot } from "./program.js";
 import { produceMusic } from "./produce.js";
 import { musicStyles } from "./score.js";
 
-import { renderPiano, maxRenderSeconds } from "./render.js";
+import { renderMidi, maxRenderSeconds } from "./render.js";
 
 const configuredRoot = resolve(process.env.AUDIO_MCP_WORKSPACE || "audio-assets");
 await mkdir(configuredRoot, { recursive: true, mode: 0o700 });
@@ -46,6 +47,15 @@ const midiOptions = {
   seed: z.number().int().min(0).max(0xffffffff).default(1),
 };
 
+server.registerTool("audio_generate_instrument", {
+  description: "Compose editable solo MIDI. Marimba, acoustic drums and long-bow cello ensemble use bundled CC0 recordings in audio_render.",
+  inputSchema: { instrument: z.enum(instruments), pattern: z.enum(drumPatterns).optional().describe("Acoustic drums only, default backbeat"), ...midiOptions },
+}, async ({ instrument, pattern, duration_seconds, bpm, seed }) => {
+  if (pattern && instrument !== "acoustic_drums") throw new Error("pattern applies only to acoustic_drums");
+  const asset = await saveAsset("mid", composeInstrument(instrument, duration_seconds, bpm, seed, pattern));
+  return result({ status: "completed", assets: [asset], instrument, ...(instrument === "acoustic_drums" ? { pattern: pattern ?? "backbeat" } : {}), duration_seconds, bpm, seed });
+});
+
 server.registerTool("audio_generate_piano", {
   description: "Compose an editable C major solo piano MIDI with right and left hand tracks.",
   inputSchema: midiOptions,
@@ -78,11 +88,11 @@ async function readAsset(asset_id: string, extension: ".wav" | ".mid", limit: nu
 }
 
 server.registerTool("audio_render", {
-  description: "Render an audio_generate_piano MIDI asset to a stereo PCM WAV using the local sound bank.",
+  description: "Render a generated piano or instrument MIDI asset to a stereo PCM WAV using its local sound bank.",
   inputSchema: { asset_id: z.uuid() },
 }, ({ asset_id }, { signal }) => withRenderSlot(async () => {
   const midi = await readAsset(asset_id, ".mid", 128 * 1024);
-  const { wav, validation } = await renderPiano(root, midi, signal);
+  const { wav, validation } = await renderMidi(root, midi, signal);
   const asset = await saveAsset("wav", wav);
   return result({ status: "completed", source_asset_id: asset_id, assets: [asset], validation });
 }));

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#182624" />
+    <meta
+      name="description"
+      content="Compose, preview and download original MIDI and WAV takes in your browser. Works offline after setup."
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; worker-src 'self'; img-src 'self' data:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="stylesheet" href="./STYLE_FILE" />
+    <script type="module" src="./APP_FILE"></script>
+    <title>Audio MCP · Sound studio</title>
+  </head>
+  <body>
+    <a class="skip" href="#studio">Skip to studio</a>
+    <header>
+      <div class="top">
+        <a class="brand" href="#studio" aria-label="Audio MCP studio"
+          ><span class="brandmark" aria-hidden="true">∿</span>Audio MCP</a
+        >
+        <nav aria-label="Main">
+          <a href="#studio">Studio</a><a href="#library">Library</a>
+        </nav>
+        <button id="install" class="install">
+          Install app <span aria-hidden="true">↧</span>
+        </button>
+      </div>
+    </header>
+    <main>
+      <section id="studio" aria-labelledby="title">
+        <div class="heading">
+          <div>
+            <h1 id="title">Sound studio</h1>
+            <p>Compose a take or preview a score for <a href="?piece=film#studio">film</a>, <a href="?piece=cafe#studio">café</a> or <a href="?piece=recital#studio">solo piano</a>.</p>
+          </div>
+          <span class="connect" id="connection" role="status"
+            >Preparing offline mode</span
+          >
+        </div>
+        <div class="workbench">
+          <form id="controls">
+            <h2>Composer</h2>
+            <div class="segment" role="group" aria-label="Sound source">
+              <button type="button" id="instrumentMode" aria-pressed="true">
+                Instrument</button
+              ><button type="button" id="effectMode" aria-pressed="false">
+                Sound effect
+              </button>
+            </div>
+            <label for="voice" id="voiceLabel">Instrument</label
+            ><select id="voice"></select>
+            <div id="patternField" hidden>
+              <label for="pattern">Drum pattern</label
+              ><select id="pattern"></select>
+            </div>
+            <div class="fields">
+              <div id="tempoField">
+                <label for="tempo">Tempo</label>
+                <div class="unit">
+                  <input
+                    id="tempo"
+                    type="number"
+                    min="40"
+                    max="240"
+                    required
+                    value="100"
+                  /><span>BPM</span>
+                </div>
+              </div>
+              <div>
+                <label for="duration">Duration</label>
+                <div class="unit">
+                  <input
+                    id="duration"
+                    type="number"
+                    min="1"
+                    max="60"
+                    step="any"
+                    required
+                    value="12"
+                  /><span>sec</span>
+                </div>
+              </div>
+            </div>
+            <div id="seedField">
+              <label for="seed">Variation seed</label>
+              <div class="unit">
+                <input
+                  id="seed"
+                  type="number"
+                  min="0"
+                  max="4294967295"
+                  step="1"
+                  required
+                  value="42"
+                /><button
+                  id="random"
+                  type="button"
+                  title="Randomize seed"
+                  aria-label="Randomize seed"
+                >
+                  ⤨
+                </button>
+              </div>
+            </div>
+            <button class="primary" type="submit" id="generate">
+              <span aria-hidden="true">＋</span> Generate &amp; save
+            </button>
+          </form>
+          <section class="monitor" aria-labelledby="monitorTitle">
+            <div class="monitorTop">
+              <span class="mono">AUDIO MONITOR</span
+              ><span class="monitorCode">44.1 kHz / PCM</span>
+            </div>
+            <div class="monitorBody">
+              <div class="trackhead">
+                <div>
+                  <h2 id="monitorTitle">Marimba</h2>
+                  <p id="details">Preparing preview…</p>
+                </div>
+                <div class="speaker" aria-hidden="true"></div>
+              </div>
+              <div class="scope">
+                <canvas
+                  id="wave"
+                  width="900"
+                  height="140"
+                  aria-hidden="true"
+                ></canvas
+                ><input
+                  type="range"
+                  id="seek"
+                  min="0"
+                  max="12"
+                  step=".01"
+                  value="0"
+                  aria-label="Seek playback"
+                  disabled
+                />
+              </div>
+              <div class="time">
+                <span id="elapsed">0:00</span><span id="length">0:12</span>
+              </div>
+              <div class="transport">
+                <button id="play" disabled aria-label="Play preview">
+                  <span aria-hidden="true" id="playIcon">▶</span
+                  ><span id="playText">Play</span>
+                </button>
+                <div class="downloads">
+                  <a id="wav" hidden>WAV ↓</a><a id="midi" hidden>MIDI ↓</a>
+                </div>
+              </div>
+            </div>
+            <audio id="audio" preload="metadata"></audio>
+          </section>
+        </div>
+        <p class="message" role="status" id="message"></p>
+      </section>
+      <section id="library" aria-labelledby="libraryTitle">
+        <div class="libraryHead">
+          <h2 id="libraryTitle">Take library</h2>
+          <span class="mono" id="count">0 TAKES</span>
+        </div>
+        <p class="libraryNote">
+          Saved on this device. Download a copy to keep it elsewhere.
+        </p>
+        <div id="takes"></div>
+      </section>
+      <footer>
+        <span>Audio MCP</span
+        ><a href="./credits.txt" target="_blank" rel="noopener"
+          >Sound credits ↗</a
+        >
+      </footer>
+    </main>
+    <dialog id="installHelp" aria-labelledby="installTitle">
+      <h2 id="installTitle">Install Audio MCP</h2>
+      <p>
+        On iPhone or iPad, open this page in Safari, choose Share, then Add to
+        Home Screen. In desktop Chrome or Edge, use the install action in the
+        address bar or browser menu.
+      </p>
+      <p>You can also use the studio directly in this browser.</p>
+      <button id="dismiss" class="primary">Close</button>
+    </dialog>
+    <aside id="updateNotice" hidden>
+      <span id="updateText" role="status">An update is ready.</span>
+      <button id="update">Apply update</button>
+    </aside>
+    <noscript
+      >Enable JavaScript to compose and export audio on this device.</noscript
+    >
+  </body>
+</html>

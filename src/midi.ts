@@ -25,11 +25,15 @@ export function addNote(track: MidiEvent[], channel: number, pitch: number, leng
   );
 }
 
-export function encodeMidi(tempo: number, ticks: number, parts: MidiEvent[][]) {
+// Text metadata survives server restarts and is ignored by ordinary GM players.
+export const cc0BankTag = "Audio-MCP CC0 v1";
+
+export function encodeMidi(tempo: number, ticks: number, parts: MidiEvent[][], bankTag?: typeof cc0BankTag) {
   const conductor: MidiEvent[] = [
     { type: "setTempo", deltaTime: 0, microsecondsPerBeat: tempo },
-    { type: "endOfTrack", deltaTime: ticks },
   ];
+  if (bankTag) conductor.push({ type: "text", deltaTime: 0, text: bankTag });
+  conductor.push({ type: "endOfTrack", deltaTime: ticks });
   for (const track of parts) track.push({ type: "endOfTrack", deltaTime: 0 });
   const tracks = [conductor, ...parts];
   return Buffer.from(writeMidi({ header: { format: 1, numTracks: tracks.length, ticksPerBeat: ppq }, tracks }));

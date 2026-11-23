@@ -1,0 +1,12 @@
+# Acoustic chamber recordings
+
+The browser studio uses 136 selected real instrument recordings. Each recording is distributed under CC0 1.0. The piano is the close microphone of the Steinway B, sampled with the sustain pedal down at 12 pitches and three recorded dynamics. Solo violin and the cello section use sustained vibrato bowing. The upright bass uses pizzicato. The flute uses sustained vibrato. The plucked voices use a Spanish classical nylon guitar and the fingerstyle variation of a Yamaha RBX electric bass.
+
+- Steinway B comes from the [Versilian Community Sample Library](https://github.com/sgossner/VCSL/tree/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e). [Upstream CC0 dedication](https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/LICENSE)
+- Violin, cello section, contrabass and flute come from [Versilian Studios' VS Chamber Orchestra 2 Community Edition](https://github.com/sgossner/VSCO-2-CE/tree/440300901dfe9275fd84e0b7763af1f8443ae62e). [Upstream CC0 dedication](https://github.com/sgossner/VSCO-2-CE/blob/440300901dfe9275fd84e0b7763af1f8443ae62e/LICENSE)
+- Guitar and electric bass come from FreePats. Roberto recorded the [Spanish classical guitar](https://freepats.zenvoid.org/Guitar/acoustic-guitar.html). Andrea Biasior recorded the [fingerstyle Yamaha RBX bass](https://freepats.zenvoid.org/ElectricGuitar/clean-electric-bass.html). Both releases carry CC0 dedications.
+- MIDI root notes and fine-tuning for the orchestral recordings follow the [publisher's SFZ maps](https://github.com/sgossner/VSCO-2-CE/tree/6dd651d55dde97fd4028699be9d4481f26917891). The cello is a recorded section. Each bowed note starts a new recorded bow stroke.
+- The app ships two-channel, 32 kHz FLAC excerpts in instrument banks. The source filename, Git revision, original file SHA-256, root, tuning and bank offsets for each excerpt are in regions.json. Short excerpts retain the attack and up to 6.4 seconds of the recorded note. The mix uses the recorded stereo channels, note-release envelopes and a shared stereo room.
+- Run `python3 scripts/build_chamber_bank.py` from the project root with Python 3, curl, FFmpeg, a libarchive tar with 7z support and network access to rebuild. Building or using the studio with the packaged banks works offline.
+
+The original arrangements use a seeded score written for this project. They contain no external backing tracks or song excerpts. CC0 permits commercial use of the recordings. [CC0 terms](https://creativecommons.org/publicdomain/zero/1.0/)

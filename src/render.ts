@@ -1,34 +1,41 @@
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { cc0BankTag } from "./midi.js";
 import { runProgram } from "./program.js";
 import { parseMidi } from "midi-file";
 import { analyze } from "./audio.js";
 
+const cc0Bank = fileURLToPath(new URL("../assets/cc0/instruments.sf2", import.meta.url));
 const macPianoBank = "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls";
 export const maxRenderSeconds = 300.01;
 
-// Piano assets carry a single tempo and the piece's end tick in the conductor track.
-function pianoDuration(midi: Buffer) {
+// Read only the bounded conductor track for tempo, duration and bank selection.
+function renderSettings(midi: Buffer) {
   if (midi.length < 30 || midi.toString("ascii", 0, 4) !== "MThd" ||
       midi.readUInt32BE(4) !== 6 || midi.readUInt16BE(8) !== 1 ||
-      midi.toString("ascii", 14, 18) !== "MTrk" || midi.readUInt32BE(18) > 16) {
-    throw new Error("Expected an audio_generate_piano MIDI asset");
+      midi.toString("ascii", 14, 18) !== "MTrk" || midi.readUInt32BE(18) > 20 + cc0BankTag.length) {
+    throw new Error("Expected a generated Audio MCP MIDI asset");
   }
   const end = 22 + midi.readUInt32BE(18);
   const {header, tracks} = parseMidi(midi.subarray(0, end));
-  const [tempo, stop] = tracks[0];
-  if (tracks[0].length !== 2 || tempo?.type !== "setTempo" || tempo.deltaTime !== 0 ||
+  const events = tracks[0];
+  const marker = events[1];
+  const bundled = events.length === 3 && marker?.type === "text" && marker.deltaTime === 0 && marker.text === cc0BankTag;
+  const tempo = events[0];
+  const stop = events.at(-1);
+  if ((!bundled && events.length !== 2) || tempo?.type !== "setTempo" || tempo.deltaTime !== 0 ||
       stop?.type !== "endOfTrack" || !header.ticksPerBeat) {
-    throw new Error("Unsupported piano MIDI conductor track");
+    throw new Error("Unsupported MIDI conductor track");
   }
   const seconds = stop.deltaTime * tempo.microsecondsPerBeat / header.ticksPerBeat / 1e6;
   if (!(seconds > 0 && seconds <= maxRenderSeconds)) throw new Error("Unsupported MIDI duration");
-  return seconds;
+  return { seconds, bundled };
 }
 
-export async function renderPiano(root: string, midi: Buffer, signal: AbortSignal) {
-  const seconds = pianoDuration(midi);
-  const bank = process.env.AUDIO_MCP_SOUNDFONT || (process.platform === "darwin" ? macPianoBank : "");
+export async function renderMidi(root: string, midi: Buffer, signal: AbortSignal) {
+  const { seconds, bundled } = renderSettings(midi);
+  const bank = bundled ? cc0Bank : process.env.AUDIO_MCP_SOUNDFONT || (process.platform === "darwin" ? macPianoBank : "");
   if (!bank) throw new Error("Set AUDIO_MCP_SOUNDFONT to a local GM piano sound bank");
   await access(bank);
   const dir = await mkdtemp(join(root, ".render-"));

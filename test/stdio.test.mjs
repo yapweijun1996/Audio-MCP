@@ -8,7 +8,7 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-test("generate piano MIDI and verify sound effects over stdio", async t => {
+test("generate instrument MIDI and verify sound effects over stdio", async t => {
   const directory = await mkdtemp(join(tmpdir(), "audio-mcp-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = join(directory, "assets");
@@ -21,7 +21,7 @@ test("generate piano MIDI and verify sound effects over stdio", async t => {
   await client.connect(transport);
   t.after(() => client.close());
   const names = (await client.listTools()).tools.map(tool => tool.name);
-  assert.deepEqual(names.sort(), ["audio_analyze", "audio_generate_piano", "audio_generate_sfx", "audio_produce_music", "audio_render"]);
+  assert.deepEqual(names.sort(), ["audio_analyze", "audio_generate_instrument", "audio_generate_piano", "audio_generate_sfx", "audio_produce_music", "audio_render"]);
   const call = (name, args) => client.callTool({ name, arguments: args });
   const files = [];
   for (const effect of ["click", "hover", "success", "error", "whoosh"]) {
@@ -77,6 +77,91 @@ test("generate piano MIDI and verify sound effects over stdio", async t => {
     }
   }
   assert.equal((await call("audio_generate_piano", { bpm: 0 })).isError, true);
+  for (const [instrument, program, count] of [
+    ["nylon_guitar", 24, 9], ["finger_bass", 33, 5], ["flute", 73, 5],
+  ]) {
+    await t.test(instrument, async () => {
+      const args = { instrument, duration_seconds: 2.125, bpm: 120, seed: 42 };
+      const data = await midiAsset("audio_generate_instrument", args);
+      assert.deepEqual(await midiAsset("audio_generate_instrument", args), data);
+      const { header, tracks } = parseMidi(data);
+      assert.equal(header.format, 1);
+      assert.equal(tracks.length, 2);
+      const [conductor, part] = tracks;
+      assert.equal(conductor.find(e => e.type === "setTempo").microsecondsPerBeat, 500000);
+      assert.deepEqual(part.filter(e => e.type === "programChange").map(e => e.programNumber), [program]);
+      const notes = part.filter(e => e.type === "noteOn" || e.type === "noteOff");
+      assert.equal(notes.length, count * 2);
+      for (let i = 0; i < notes.length; i += 2) {
+        const [on, off] = notes.slice(i, i + 2);
+        assert.equal(on.type, "noteOn");
+        assert.equal(off.type, "noteOff");
+        assert.equal(on.noteNumber, off.noteNumber);
+        assert.ok(on.velocity > 0 && off.deltaTime > 0);
+        assert.equal(on.deltaTime, 0);
+      }
+      for (const track of tracks) {
+        assert.equal(track.reduce((sum, e) => sum + e.deltaTime, 0), header.ticksPerBeat * 4.25);
+      }
+      const pitches = notes.filter(e => e.type === "noteOn").map(e => e.noteNumber);
+      if (instrument === "nylon_guitar") assert.deepEqual(pitches.slice(0, 4), [60, 64, 67, 64]);
+      if (instrument === "finger_bass") assert.deepEqual(pitches.slice(0, 4), [36, 36, 43, 36]);
+      if (instrument === "flute") assert.ok(pitches.every(pitch => pitch >= 60 && pitch <= 96));
+    });
+  }
+  for (const [instrument, pattern] of [
+    ["marimba"], ["cello_ensemble"], ["acoustic_drums", "backbeat"],
+    ["acoustic_drums", "half_time"], ["acoustic_drums", "swing"],
+  ]) {
+    await t.test([instrument, pattern].filter(Boolean).join(" "), async () => {
+      const args = { instrument, pattern, duration_seconds: 2.4, bpm: 100, seed: 42 };
+      const generated = await call("audio_generate_instrument", args);
+      assert.ok(!generated.isError);
+      const [asset] = generated.structuredContent.assets;
+      const data = await readFile(asset.path);
+      assert.deepEqual(await midiAsset("audio_generate_instrument", args), data);
+      const { header, tracks: [conductor, part] } = parseMidi(data);
+      assert.equal(conductor.find(e => e.type === "setTempo").microsecondsPerBeat, 600000);
+      const beat = header.ticksPerBeat;
+      let time = 0;
+      const starts = [];
+      for (const event of part) {
+        time += event.deltaTime;
+        if (event.type === "noteOn") starts.push({ time, key: event.noteNumber, channel: event.channel });
+      }
+      assert.equal(time, 4 * beat);
+      if (instrument === "acoustic_drums") {
+        assert.equal(generated.structuredContent.pattern, pattern);
+        assert.ok(starts.every(n => n.channel === 9));
+        const hat = starts.filter(n => n.key === 42);
+        assert.equal(hat.length, 8);
+        assert.equal(hat[1].time, pattern === "swing" ? 2 * beat / 3 : beat / 2);
+        const snare = starts.filter(n => n.key === 38).map(n => n.time);
+        assert.deepEqual(snare, pattern === "half_time" ? [2 * beat] : [beat, 3 * beat]);
+        if (pattern === "backbeat") {
+          assert.deepEqual(await midiAsset("audio_generate_instrument", { ...args, pattern: undefined }), data);
+        }
+      } else {
+        const marimba = instrument === "marimba";
+        assert.equal(part.find(e => e.type === "programChange").programNumber, marimba ? 12 : 42);
+        assert.equal(starts.length, marimba ? 8 : 2);
+        assert.equal(starts[1].time, marimba ? beat / 2 : 2 * beat);
+      }
+      if (process.env.AUDIO_MCP_TEST_RENDER === "1") {
+        const rendered = await call("audio_render", { asset_id: asset.asset_id });
+        assert.ok(!rendered.isError, JSON.stringify(rendered.content));
+        const [wav] = rendered.structuredContent.assets;
+        const measured = (await call("audio_analyze", { asset_id: wav.asset_id })).structuredContent;
+        assert.equal(measured.channels, 2);
+        assert.equal(measured.duration_seconds, 2.4);
+        assert.ok(measured.peak_amplitude > 0.01 && measured.peak_amplitude < 1);
+      }
+    });
+  }
+  for (const args of [{ instrument: "marimba", pattern: "swing" }, { instrument: "acoustic_drums", pattern: "unknown" }]) {
+    assert.equal((await call("audio_generate_instrument", args)).isError, true);
+  }
+  assert.equal((await call("audio_generate_instrument", { instrument: "unknown" })).isError, true);
   assert.equal((await call("audio_render", { asset_id: "../outside" })).isError, true);
   assert.equal((await call("audio_render", { asset_id: files[0].asset_id })).isError, true);
   if (process.env.AUDIO_MCP_TEST_RENDER === "1") {
