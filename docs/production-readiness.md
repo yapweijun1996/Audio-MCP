@@ -4,18 +4,40 @@ Use this checklist for a trusted local MCP client that launches Audio MCP over s
 
 ## Arranged music acceptance
 
-On macOS arm64 with Node 24.21.0 and FFmpeg 8.1.2, the stdio client produced both 16-bar previews below and read back the master and four stems by asset ID. The delivered WAVs use stereo 48 kHz, 24-bit PCM. Measurements are from the final WAVs before encoding the MP3 previews.
+On 2026-11-23, a Linux arm64 stdio server with Node 22.23.5 and FFmpeg 8.1.3 produced the two revised 16-bar previews below and read back the master and four stems by asset ID. The delivered WAVs use stereo 48 kHz, 24-bit PCM. Measurements are from the final WAVs before encoding the MP3 previews.
 
 | Cue | Seed | BPM | Duration | Integrated loudness | True peak |
 | --- | --- | --- | --- | --- | --- |
-| [Velvet Keys](../examples/production/velvet-keys.mp3) | 17 | 86 | 44.65 s | −16.01 LUFS | −1.85 dBTP |
-| [Night Drive](../examples/production/night-drive.mp3) | 42 | 112 | 34.29 s | −14.01 LUFS | −1.48 dBTP |
+| [Velvet Keys](../examples/production/velvet-keys.mp3) | 17 | 86 | 44.65 s | −16.00 LUFS | −2.40 dBTP |
+| [Night Drive](../examples/production/night-drive.mp3) | 42 | 112 | 34.29 s | −13.98 LUFS | −1.27 dBTP |
 
-A separate macOS run on Node 22.23.5 produced the longest supported cue (32 bars at 72 BPM, 106.67 seconds, including stems) and the shortest (8 bars at 128 BPM, 15 seconds). Both passed the delivery limits. A clean checkout of [the producer revision](https://github.com/yapweijun1996/Audio-MCP/commit/5a857fe5f8d38536b4d848b36d7531bbdf22c361) on Linux arm64 with Node 22.23.3 and FFmpeg 6.1.1 also passed all five tests with `AUDIO_MCP_TEST_PRODUCTION=1`. This Linux run covered the synthesized producer and the base stdio suite. The optional FluidSynth piano render was outside that run.
+On Linux arm64, the revised generator also passed the six-test production suite and delivered both styles at 32 bars and 72 BPM with all four stems. A macOS render attempt under heavy CPU contention ended at the worker timeout.
+
+With the original generator, a separate macOS run on Node 22.23.5 produced the longest supported cue (32 bars at 72 BPM, 106.67 seconds, including stems) and the shortest (8 bars at 128 BPM, 15 seconds). Both passed the delivery limits. A clean checkout of [the producer revision](https://github.com/yapweijun1996/Audio-MCP/commit/5a857fe5f8d38536b4d848b36d7531bbdf22c361) on Linux arm64 with Node 22.23.3 and FFmpeg 6.1.1 also passed all five tests with `AUDIO_MCP_TEST_PRODUCTION=1`. This Linux run covered the synthesized producer and the base stdio suite. The optional FluidSynth piano render was outside that run.
 
 Run `AUDIO_MCP_TEST_PRODUCTION=1 npm test` for this delivery path. The integration test exercises both styles, WAV readback, overlapping calls, client cancellation, retry and cleanup after missing FFmpeg. Each server process shares one render slot between MIDI rendering and music production. Budget temporary space for the float mix, master and requested stems. Each 48 kHz stereo 24-bit WAV uses 288,000 bytes per second plus its header. If the process is forcibly terminated, inspect `.produce-*` directories with the server stopped.
 
 The supplied producer sounds are synthesized from the score without third-party samples or banks. Verify client-specific deliverable requirements and any rights to added samples or performances when preparing a remix. [Production tool and asset guide](../README.md#produce-a-music-cue)
+
+### Comparison with paid stock music
+
+The comparison on 2026-11-23 used the publisher's public MP3 previews. The Audio MCP renders retain the same seed, tempo and bar count across revisions. To recreate an earlier score, pin the generator revision as well as the inputs. Tom Beuchel's *Lakeside* (90 BPM) pairs electric piano with several percussion textures. Sascha Giebel's *Neon Overdrive* (112 BPM) combines a recurring synth hook with arpeggios and pads. Both are sold as licensed stock cues. [Lakeside](https://www.melodyloops.com/tracks/lakeside/) · [Neon Overdrive](https://www.melodyloops.com/tracks/neon-overdrive/)
+
+| Cue | Where to compare the original and revised demos | What changed |
+| --- | --- | --- |
+| Velvet Keys | 11–22 s, the first four bars of the theme | The original bass repeats the same three attacks every bar. The revision answers the first melodic figure with a longer note, shifts chord entrances, and uses quieter bass pickups before chord changes. Key velocity now controls both the bell-like attack and its decay. [Original preview](https://github.com/yapweijun1996/Audio-MCP/blob/47223cb30cbf68b7f992af89c4ebf2eaf7f5e164/examples/production/velvet-keys.mp3) · [Revised preview](../examples/production/velvet-keys.mp3) |
+| Night Drive | 15–24 s, the transition into the lift | The original stabs recur on the same three subdivisions. The revision lets the answer ring, leaves room for a drum fill, then brings in short upper-register arpeggios. The four-on-the-floor kick anchors the change. The detuned keys and lead spread out as the section opens. [Original preview](https://github.com/yapweijun1996/Audio-MCP/blob/47223cb30cbf68b7f992af89c4ebf2eaf7f5e164/examples/production/night-drive.mp3) · [Revised preview](../examples/production/night-drive.mp3) |
+
+| MP3 comparison | Original | Revised | Paid reference |
+| --- | ---: | ---: | ---: |
+| Velvet Keys, 2–8 kHz energy share (dB) | −30.2 | −24.8 | −22.2 |
+| Velvet Keys, side/mid energy (dB) | −19.1 | −19.7 | −21.1 |
+| Night Drive, 2–8 kHz energy share (dB) | −27.9 | −17.7 | −11.1 |
+| Night Drive, side/mid energy (dB) | −20.4 | −11.9 | −12.1 |
+
+Each column uses the first 16 four-beat bars from the start of its preview, at the track's own BPM. Stereo was decoded at 24 kHz. Band share is the median per-bar ratio of 2–8 kHz energy to total spectral energy, using 2,048-sample Hann windows and 50% overlap. Side/mid compares the mean-square difference and sum of the stereo channels over the excerpt. Both ratios are independent of overall gain.
+
+For both generated cues, rounding each MIDI onset to the nearest sixteenth note in bars 5–12 gives four distinct bass rhythms and five lead rhythms, up from one and two respectively. The eight-bar harmonic cycle and the synthesized drum palette are still recognizable on repeat plays. Night Drive's upper mids remain softer than the reference. These observations come from the preview audio and generated scores. Listener preference and purchase intent were outside this comparison.
 
 ## Verified baseline
 

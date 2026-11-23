@@ -8,9 +8,21 @@ import { stemNames, type Note, type Score, type Stem } from "./score.js";
 const rate = 48000;
 const tableSize = 4096;
 const sineTable = Float32Array.from({ length: tableSize }, (_, i) => Math.sin(2 * Math.PI * i / tableSize));
-function sine(phase: number) {
-  return sineTable[Math.floor(phase * tableSize) & (tableSize - 1)];
+// Sixteen partials stay below Nyquist across the score's synth registers.
+const sawTable = Float32Array.from({ length: tableSize }, (_, i) => {
+  const angle = 2 * Math.PI * i / tableSize;
+  let sum = 0;
+  for (let h = 1; h <= 16; h++) sum += (1 - h / 20) * Math.sin(angle * h) / h;
+  return sum;
+});
+
+function oscillator(table: Float32Array, phase: number) {
+  const position = phase * tableSize;
+  const whole = Math.floor(position);
+  const index = whole & (tableSize - 1);
+  return table[index] + (position - whole) * (table[(index + 1) & (tableSize - 1)] - table[index]);
 }
+function sine(phase: number) { return oscillator(sineTable, phase); }
 
 function playNote(buffer: Float32Array, part: Stem, note: Note, score: Score, voiceSeed: number) {
   const secondsPerTick = score.tempo / (1e6 * ppq);
@@ -22,52 +34,89 @@ function playNote(buffer: Float32Array, part: Stem, note: Note, score: Score, vo
   const level = (note.velocity / 100) ** 1.6;
   const left = Math.sqrt((1 - note.pan) / 2) * level;
   const right = Math.sqrt((1 + note.pan) / 2) * level;
-  const attack = rate * ({ keys: 0.009, lead: 0.025, bass: 0.006, drums: 0.0013 }[part]);
+  const touch = Math.min(1, note.velocity / 100);
+  const section = Math.floor(note.tick * score.sections.length / score.ticks);
+  const lift = score.sections[section].name === "lift";
+  const stereoDepth = [0.35, 0.72, 0.90, 0.55][section];
+  const attack = rate * ({ keys: drive ? 0.018 : 0.014 - touch * 0.010,
+    lead: drive ? 0.012 : 0.034, bass: 0.006, drums: 0.0013 }[part]);
   const releaseSeconds = { keys: 0.52, lead: 0.28, bass: 0.10, drums: 0.32 }[part];
   const openHat = note.pitch === 46;
   const keyDecay = Math.exp(-1 / (rate * (drive ? 0.75 : 1.5)));
-  const transientDecay = Math.exp(-1 / (rate * 0.095));
+  const transientDecay = Math.exp(-1 / (rate * (part === "keys" ? 0.07 + 0.11 * touch : 0.095)));
+  const detune = drive ? 0.0027 : 0.0011;
+  const tremoloStep = 4.2 / rate;
+  const startPhase = (start * tremoloStep) % 1;
+  const stereoPhase = (start * frequency / rate * detune) % 1;
+  const tineStrength = touch * touch * 0.56;
+  const openness = (lift ? 0.64 : 0.40) + 0.15 * touch;
   const drumDecay = Math.exp(-1 / (rate * (note.pitch === 36 ? 0.080 : note.pitch === 38 ? 0.064 : openHat ? 0.090 : 0.025)));
   const releaseDecay = Math.exp(-6.5 / (rate * releaseSeconds));
   const end = Math.min(held + Math.round(releaseSeconds * rate), buffer.length / 2 - start);
   let phase = 0, kickPhase = 0, body = 1, transient = 1, release = 1, drumLevel = 1;
-  let noiseState = voiceSeed >>> 0, previousNoise = 0, noiseBand = 0;
+  let noiseState = Math.imul(voiceSeed ^ 0xa53c9e31, 0x85ebca6b) >>> 0;
+  let previousNoise = 0, noiseBand = 0, lowNoise = 0;
   for (let i = 0; i < end; i++) {
     let sample: number;
+    let spread = 0;
     if (part === "drums") {
       noiseState = (Math.imul(1664525, noiseState) + 1013904223) >>> 0;
       const noise = noiseState / 2 ** 31 - 1;
       const high = noise - previousNoise;
       previousNoise = noise;
-      noiseBand += 0.53 * (high - noiseBand);
+      lowNoise += 0.08 * (noise - lowNoise);
+      noiseBand += (drive ? 0.57 : 0.38) * (noise - lowNoise - noiseBand);
       if (note.pitch === 36) {
         kickPhase += (47 + 113 * transient ** 4) / rate;
         sample = 0.58 * sine(kickPhase) + 0.025 * high * transient ** 8;
       } else if (note.pitch === 38) {
-        sample = 0.31 * noiseBand + 0.18 * sine(i * 183 / rate) * transient;
+        const wires = drive && i < rate * 0.014 ? 0.40 : 1;
+        sample = (drive ? 0.78 : 0.48) * wires * noiseBand +
+          (0.18 * sine(i * 183 / rate) + 0.072 * sine(i * 327 / rate)) * transient;
       } else {
         const metal = sine(i * 4177 / rate) * sine(i * 6371 / rate);
-        sample = 0.16 * high + 0.07 * metal;
+        sample = (drive ? 0.28 : 0.14) * noiseBand + 0.055 * high +
+          (drive ? 0.13 : 0.08) * metal;
       }
       sample *= drumLevel;
       drumLevel *= drumDecay;
     } else if (part === "bass") {
       sample = 0.32 * (sine(phase) + (drive ? 0.32 : 0.17) * sine(2 * phase) + 0.10 * transient * sine(3 * phase));
     } else if (part === "keys") {
-      const tine = sine(phase + (drive ? 0.11 : 0.17) * transient * sine(2 * phase));
-      sample = 0.145 * body * (tine + 0.24 * sine(phase * 1.002) + 0.16 * transient * sine(phase * 4.01));
+      if (drive) {
+        const dry = sine(phase);
+        const bright = (0.22 + 0.64 * transient) * openness;
+        const a = oscillator(sawTable, phase * (1 - detune) + stereoPhase);
+        const b = oscillator(sawTable, phase * (1 + detune) + stereoPhase + 0.21);
+        const strike = 0.18 * touch * transient * sine(5.01 * phase);
+        sample = 0.135 * body * (dry + bright * (a + b) * 0.5 + strike);
+        spread = 0.105 * stereoDepth * body * openness * (a - b);
+      } else {
+        const bell = sine(phase + tineStrength * transient * sine(3.01 * phase));
+        const reed = 0.20 * sine(phase * (1 + detune)) + 0.34 * touch * transient * sine(phase * 6.98);
+        const tremolo = 0.95 + 0.05 * sine(startPhase + i * tremoloStep);
+        sample = 0.15 * body * (bell + reed) * tremolo;
+      }
     } else {
-      const vibrato = 0.035 * (1 - transient) * sine(i * 4.8 / rate);
+      const vibrato = (drive ? 0.026 : 0.019) * (1 - transient) * sine(i * 4.8 / rate);
       const p = phase + vibrato;
-      sample = drive
-        ? 0.145 * (sine(p) + 0.35 * sine(2 * p) + 0.18 * sine(3 * p) + 0.09 * sine(4.006 * p))
-        : 0.16 * (sine(p + 0.12 * transient * sine(3 * p)) + 0.16 * sine(2.003 * p));
+      if (drive) {
+        const bright = openness * (0.55 + 0.40 * transient);
+        const core = oscillator(sawTable, p);
+        const detuned = oscillator(sawTable, p * (1 + detune) + stereoPhase + 0.25);
+        const fundamental = sine(p);
+        const overtones = core - 0.95 * fundamental;
+        sample = 0.15 * (fundamental + bright * (core + 1.50 * overtones));
+        spread = 0.092 * stereoDepth * bright * (detuned - core);
+      } else {
+        sample = 0.16 * (sine(p + 0.24 * touch * transient * sine(3 * p)) + 0.18 * sine(2.003 * p));
+      }
     }
     if (i >= held) release *= releaseDecay;
-    const amplitude = Math.min(1, i / attack) * release * sample;
+    const envelope = Math.min(1, i / attack) * release;
     const pos = (start + i) * 2;
-    buffer[pos] += left * amplitude;
-    buffer[pos + 1] += right * amplitude;
+    buffer[pos] += left * envelope * (sample + spread);
+    buffer[pos + 1] += right * envelope * (sample - spread);
     phase += step;
     transient *= transientDecay;
     body *= keyDecay;

@@ -23,6 +23,35 @@ const night = [
   [31, 53, 55, 58, 62], [34, 53, 57, 60, 62], [33, 52, 55, 61, 64], [38, 53, 57, 60, 64],
 ];
 
+// Four-bar phrases share a call, leave space for a response and approach the next downbeat.
+// Lead entries are [beat, held beats, chord-tone index]. Comping entries are [beat, held beats].
+type Phrase = [number, number, number][];
+type Chords = [number, number][];
+const velvetLead: Phrase[] = [
+  [[0.5, 0.72, 1], [1.5, 0.32, 2], [2.25, 1.18, 3]],
+  [[0.75, 1.12, 2], [2.5, 0.36, 1], [3.25, 0.38, 0]],
+  [[0.5, 0.72, 1], [1.5, 0.32, 2], [2.25, 0.45, 3], [3.25, 0.38, 2]],
+  [[0.25, 1.55, 1], [3.5, 0.30, 0]],
+];
+const nightLead: Phrase[] = [
+  [[0.5, 0.38, 0], [1.25, 0.37, 0], [2, 0.82, 2], [3.5, 0.32, 1]],
+  [[0, 1.35, 3], [2.75, 0.65, 1]],
+  [[0.5, 0.38, 0], [1.25, 0.37, 0], [2, 0.40, 2], [2.75, 0.66, 3]],
+  [[0, 1.72, 2], [3.25, 0.40, 1]],
+];
+const velvetComp: Chords[] = [
+  [[0, 1.58], [2.5, 0.72]], [[0.5, 1.1], [2.75, 0.7]],
+  [[0, 1.85], [3, 0.55]], [[0.25, 2.3]],
+];
+const nightComp: Chords[] = [
+  [[0, 0.62], [1.5, 0.55], [3, 0.54]], [[0, 1.45], [2.75, 0.68]],
+  [[0, 0.62], [1.5, 0.55], [3.5, 0.30]], [[0, 1.85]],
+];
+
+const velvetBass = [[0, 1.5, 2.75], [0, 2.25, 3.5], [0, 1.75, 2.75], [0, 2, 3.5]];
+const nightBass = [[0, 0.75, 1.5, 2, 2.75, 3.5], [0, 1.5, 2, 3.25],
+  [0, 0.75, 1.5, 2.5, 3.5], [0, 1.5, 2.75]];
+
 export function composeScore(style: Style, bars: number, seed: number, bpm: number) {
   const driving = style === "night_drive";
   const harmony = driving ? night : velvet;
@@ -34,36 +63,56 @@ export function composeScore(style: Style, bars: number, seed: number, bpm: numb
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     return state / 2 ** 32;
   }
-  const hook = [2, 0, 1, 3];
-  const motifOffset = Math.floor(random() * hook.length);
+  const motifOffset = (seed ^ (seed >>> 16)) & 3;
+  const answerOffset = random() < 0.5 ? 1 : 3;
   const sections = ["intro", "theme", "lift", "outro"].map((name, i) => ({
     name, start_bar: 1 + i * bars / 4,
   }));
+  const comp = driving ? nightComp : velvetComp;
+  const bassLine = driving ? nightBass : velvetBass;
+  const phrases = driving ? nightLead : velvetLead;
+  const sectionBars = bars / sections.length;
   for (let bar = 0; bar < bars; bar++) {
     const section = Math.floor(bar * 4 / bars);
     const last = bar === bars - 1;
+    const phraseBar = bar % 4;
+    const localBar = bar % sectionBars;
+    const turnaround = localBar === sectionBars - 1;
+    const lift = section === 2;
     const chord = harmony[last ? 7 : bar % 8].map(pitch => pitch + transpose);
     const [root, ...upper] = chord;
     function note(part: Stem, beat: number, length: number, pitch: number, velocity: number, pan = 0) {
       const swing = !driving && beat % 1 === 0.5 ? 0.075 : 0;
       const jitter = beat === 0 ? 0 : (random() - 0.5) * 0.025;
-      const tick = Math.max(0, Math.round((bar * 4 + beat + swing + jitter) * ppq));
+      const pocket = !driving && part === "drums" && pitch === 38 ? 0.025 : 0;
+      const tick = Math.max(bar * barTicks, Math.round((bar * 4 + beat + swing + jitter + pocket) * ppq));
       parts[part].push({ tick, length: Math.max(1, Math.min(bars * barTicks - tick, Math.round(length * ppq))),
         pitch, velocity: Math.round(velocity + random() * 6), pan });
     }
     // The final downbeat resolves to tonic with room for the tails to ring.
-    const chords = last ? [0] : driving ? [0, 1.5, 3] : [0, 2.5];
-    for (const beat of chords) {
+    const chords: Chords = last ? [[0, 2.35]] : section === 0 && localBar === 0 ? [[0, 2.6]] : comp[phraseBar];
+    for (const [beat, length] of chords) {
       upper.forEach((pitch, voice) => {
-        const length = last ? 2.35 : driving ? 0.7 : beat === 0 ? 1.7 : 1.0;
-        note("keys", beat + voice * 0.013, length, pitch, section === 2 ? 72 : 62, (voice - 1.5) * 0.30);
+        const finger = phraseBar % 2 ? 3 - voice : voice;
+        const roll = driving ? 0.007 : 0.020 + 0.005 * phraseBar;
+        const accent = (voice === 3 ? 7 : 0) - (beat >= 2 ? 8 : 0);
+        note("keys", beat + finger * roll, length, pitch, (lift ? 76 : 64) + accent, (voice - 1.5) * 0.30);
       });
     }
+    if (driving && lift && !turnaround) {
+      for (const [i, beat] of [0.75, 1.25, 2.5, 3.25].entries()) {
+        note("keys", beat, 0.20, upper[(i + phraseBar) % 4] + 12, 49 + i * 3, i % 2 ? 0.53 : -0.53);
+      }
+    }
     if (section > 0 || bar % 2 || last) {
-      const beats = last ? [0] : driving ? [0, 0.75, 1.5, 2, 2.75, 3.5] : [0, 1.5, 2.75];
-      for (const beat of beats) {
-        const pitch = beat === 2.75 ? root + 7 : beat === 3.5 ? root + 12 : root;
-        note("bass", beat, last ? 2.1 : driving ? 0.44 : 0.92, pitch, 84);
+      const beats = last ? [0] : bassLine[phraseBar];
+      for (const [i, beat] of beats.entries()) {
+        const pickup = !last && phraseBar % 2 === 1 && i === beats.length - 1;
+        const nextRoot = harmony[bar + 1 === bars - 1 ? 7 : (bar + 1) % 8][0] + transpose;
+        const pitch = pickup ? nextRoot - (driving ? 2 : 1) : beat === 2.75 ? root + 7 : root;
+        const space = (beats[i + 1] ?? 4) - beat;
+        const length = last ? 2.1 : Math.min(space - 0.14, driving ? 0.46 : 1.35);
+        note("bass", beat, length, pitch, pickup ? 69 : i === 0 ? 91 : 78);
       }
     }
     if (last) {
@@ -71,26 +120,32 @@ export function composeScore(style: Style, bars: number, seed: number, bpm: numb
       if (driving) note("drums", 0, 0.3, 36, 72);
       continue;
     }
-    if (section === 1 || section === 2 || bar % 2 === 1) {
-      const phrase = driving ? [0.5, 1.25, 2.5, 3.25] : [0.5, 1.5, 2.75];
-      for (const [i, beat] of phrase.entries()) {
+    if (section === 1 || lift || bar % 2 === 1) {
+      const phrase = phrases[phraseBar];
+      for (const [i, [beat, length, degree]] of phrase.entries()) {
         if ((section === 0 || section === 3) && i > 1) break;
-        if (bar % 4 === 3 && i === phrase.length - 1) continue;
-        const index = hook[(motifOffset + i + (bar % 2) + (section === 2 ? 1 : 0)) % 4];
-        note("lead", beat, i === 0 ? 0.65 : 0.44, upper[index] + 12, section === 2 ? 82 : 70, 0.15);
+        if (turnaround && i > 0 && !lift) break;
+        // On a second four-bar pass, recast the answer over the changing harmony.
+        const variation = (lift || localBar >= 4) && phraseBar % 2 ? answerOffset : 0;
+        if (localBar >= 4 && i === 1 && phraseBar === 2) continue;
+        const index = (degree + motifOffset + variation) % 4;
+        const accent = i === 0 ? 7 : length < 0.5 ? -7 : 2;
+        note("lead", beat, length, upper[index] + 12, (lift ? 81 : 71) + accent, 0.12);
       }
     }
     const fullKit = section === 1 || section === 2;
     const kicks = fullKit ? driving ? [0, 1, 2, 3] : [0, 1.75, 2.5] : [0];
     for (const beat of kicks) note("drums", beat, 0.22, 36, beat === 0 ? 99 : 84);
+    if (!driving && fullKit && phraseBar === 1) note("drums", 2.75, 0.07, 38, 34, -0.10);
     for (const beat of fullKit ? [1, 3] : [3]) note("drums", beat, 0.16, 38, fullKit ? 82 : 56, -0.07);
     const hats = fullKit ? 8 : 4;
     for (let i = 0; i < hats; i++) {
       const beat = fullKit ? i / 2 : i + 0.5;
-      const openHat = section === 2 && i === 7;
+      if (turnaround && i >= hats - 2) continue;
+      const openHat = lift && i === (phraseBar % 2 ? 3 : 7);
       note("drums", beat, openHat ? 0.35 : 0.09, openHat ? 46 : 42, i % 2 ? 44 : 56, 0.32);
     }
-    if (bar % 4 === 3 && section < 3) {
+    if (turnaround && section < 3) {
       for (const beat of [3.5, 3.75]) note("drums", beat, 0.08, 38, beat === 3.5 ? 36 : 48, -0.12);
     }
   }

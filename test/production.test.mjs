@@ -41,6 +41,29 @@ test("editable scores preserve form, seed and polyphonic note lengths", () => {
   }
 });
 
+test("arrangements keep a recurring call and leave space for a contrasting answer", () => {
+  for (const style of ["velvet_keys", "night_drive"]) {
+    for (const seed of [0, 17, 42, 0xffffffff]) {
+      const { parts, ticks } = composeScore(style, 16, seed, 100);
+      const barTicks = ticks / 16;
+      function onsets(part, bar) {
+        return [...new Set(parts[part].filter(n => Math.floor(n.tick / barTicks) === bar)
+          .map(n => Math.round((n.tick % barTicks) * 16 / barTicks)))].sort((a, b) => a - b);
+      }
+      const bars = Array.from({ length: 8 }, (_, i) => i + 4);
+      for (const part of ["lead", "bass", "keys"]) {
+        assert.ok(new Set(bars.map(bar => onsets(part, bar).join(","))).size >= 3, style + " " + part);
+      }
+      assert.deepEqual(onsets("lead", 4).slice(0, 2), onsets("lead", 6).slice(0, 2));
+      assert.ok(onsets("lead", 7).length < onsets("lead", 4).length);
+      if (style === "night_drive") {
+        const kicks = parts.drums.filter(n => n.pitch === 36 && Math.floor(n.tick / barTicks) === 4);
+        assert.deepEqual(kicks.map(n => Math.round(n.tick * 4 / barTicks) % 4), [0, 1, 2, 3]);
+      }
+    }
+  }
+});
+
 test("analysis reads signed 24-bit stereo PCM", () => {
   const header = Buffer.from("524946462a00000057415645666d7420100000000100020080bb000000650400060018006461746106000000", "hex");
   const data = Buffer.concat([header, Buffer.from("000080ffff7f", "hex")]);
