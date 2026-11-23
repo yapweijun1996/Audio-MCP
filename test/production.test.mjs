@@ -64,6 +64,47 @@ test("arrangements keep a recurring call and leave space for a contrasting answe
   }
 });
 
+test("the lift changes bass direction and the penultimate bar resolves in each style", () => {
+  for (const style of ["velvet_keys", "night_drive"]) {
+    const driving = style === "night_drive";
+    for (const bars of [8, 16, 32]) {
+      for (const seed of [0, 1, 2, 3, 17, 42, 0x10002, 0xffffffff]) {
+        const { parts, ticks } = composeScore(style, bars, seed, 100);
+        const barTicks = ticks / bars;
+        const notesAt = (part, bar) => parts[part].filter(n => Math.floor(n.tick / barTicks) === bar)
+          .sort((a, b) => a.tick - b.tick);
+        const finalBass = notesAt("bass", bars - 1)[0];
+        assert.equal(finalBass.tick, ticks - barTicks);
+        const roots = driving ? [-5, -4, -2, 2] : [5, 4, 2, -5];
+        for (let i = 0; i < Math.min(4, bars / 4); i++) {
+          assert.equal(notesAt("bass", bars / 2 + i)[0].pitch - finalBass.pitch, roots[i]);
+        }
+        const answer = notesAt("lead", bars / 2 + 1).map(n => n.pitch);
+        assert.equal(answer.length, 3);
+        assert.ok(driving ? answer[0] < answer[1] && answer[1] < answer[2] :
+          answer[0] > answer[1] && answer[1] > answer[2]);
+        const tonicLead = finalBass.pitch + 36;
+        assert.deepEqual(notesAt("lead", bars - 2).map(n => n.pitch - tonicLead), driving ? [-5, -1] : [-4, -5]);
+        assert.equal(notesAt("lead", bars - 1)[0].pitch, tonicLead);
+        if (driving) {
+          const keys = notesAt("keys", bars - 2);
+          const intervals = notes => notes.map(n => n.pitch - finalBass.pitch).sort((a, b) => a - b);
+          assert.deepEqual(intervals(keys.slice(0, 4)), [17, 20, 24, 26]);
+          assert.deepEqual(intervals(keys.slice(4)), [17, 20, 23, 26]);
+        }
+        for (const notes of Object.values(parts)) {
+          const ends = new Map();
+          for (const n of [...notes].sort((a, b) => a.tick - b.tick)) {
+            assert.ok(n.pitch >= 0 && n.pitch <= 127 && n.length > 0 && n.tick + n.length <= ticks);
+            assert.ok(n.tick >= (ends.get(n.pitch) ?? 0), "Overlapping note at pitch " + n.pitch);
+            ends.set(n.pitch, n.tick + n.length);
+          }
+        }
+      }
+    }
+  }
+});
+
 test("analysis reads signed 24-bit stereo PCM", () => {
   const header = Buffer.from("524946462a00000057415645666d7420100000000100020080bb000000650400060018006461746106000000", "hex");
   const data = Buffer.concat([header, Buffer.from("000080ffff7f", "hex")]);

@@ -23,6 +23,20 @@ const night = [
   [31, 53, 55, 58, 62], [34, 53, 57, 60, 62], [33, 52, 55, 61, 64], [38, 53, 57, 60, 64],
 ];
 
+// Bass and four upper voices in the reference keys of D major and D minor.
+// The major lift descends G–F#–E, keeping common tones above the moving bass.
+const velvetLift = [
+  [43, 57, 59, 62, 66], [42, 57, 61, 62, 64], [40, 55, 59, 62, 66], [33, 55, 59, 62, 66],
+  [43, 54, 57, 59, 62], [42, 54, 57, 61, 64], [40, 55, 59, 62, 66], [33, 55, 59, 61, 66],
+];
+// In minor the lift opens on Fmaj7/A and climbs A–Bb–C–E under the synth stabs.
+const nightLift = [
+  [33, 53, 57, 60, 64], [34, 53, 57, 60, 62], [36, 53, 57, 62, 64], [40, 55, 60, 62, 64],
+  [34, 53, 55, 58, 62], [36, 52, 55, 58, 62], [33, 53, 57, 60, 67], [33, 52, 55, 61, 64],
+];
+const velvetMinorFour = [31, 55, 58, 62, 64];  // Gm6 into D6/9
+const nightDominant = [33, 55, 58, 61, 64];    // A7(b9) into Dm9
+
 // Four-bar phrases share a call, leave space for a response and approach the next downbeat.
 // Lead entries are [beat, held beats, chord-tone index]. Comping entries are [beat, held beats].
 type Phrase = [number, number, number][];
@@ -39,6 +53,8 @@ const nightLead: Phrase[] = [
   [[0.5, 0.38, 0], [1.25, 0.37, 0], [2, 0.40, 2], [2.75, 0.66, 3]],
   [[0, 1.72, 2], [3.25, 0.40, 1]],
 ];
+const velvetLiftAnswer: Phrase = [[0.75, 1.25, 3], [2.5, 0.48, 2], [3.5, 0.27, 1]];
+const nightLiftAnswer: Phrase = [[0, 0.85, 0], [1.75, 0.36, 2], [2.75, 0.68, 3]];
 const velvetComp: Chords[] = [
   [[0, 1.58], [2.5, 0.72]], [[0.5, 1.1], [2.75, 0.7]],
   [[0, 1.85], [3, 0.55]], [[0.25, 2.3]],
@@ -72,15 +88,24 @@ export function composeScore(style: Style, bars: number, seed: number, bpm: numb
   const bassLine = driving ? nightBass : velvetBass;
   const phrases = driving ? nightLead : velvetLead;
   const sectionBars = bars / sections.length;
+  const liftHarmony = driving ? nightLift : velvetLift;
+  const voicings = Array.from({ length: bars }, (_, bar) => {
+    const liftBar = bar - 2 * sectionBars;
+    let chord = harmony[bar % 8];
+    if (bar === bars - 1) chord = harmony[7];
+    else if (bar === bars - 2) chord = driving ? nightDominant : velvetMinorFour;
+    else if (liftBar >= 0 && liftBar < sectionBars) chord = liftHarmony[liftBar];
+    return chord.map(pitch => pitch + transpose);
+  });
   for (let bar = 0; bar < bars; bar++) {
     const section = Math.floor(bar * 4 / bars);
     const last = bar === bars - 1;
+    const preCadence = bar === bars - 2;
     const phraseBar = bar % 4;
     const localBar = bar % sectionBars;
     const turnaround = localBar === sectionBars - 1;
     const lift = section === 2;
-    const chord = harmony[last ? 7 : bar % 8].map(pitch => pitch + transpose);
-    const [root, ...upper] = chord;
+    const [root, ...upper] = voicings[bar];
     function note(part: Stem, beat: number, length: number, pitch: number, velocity: number, pan = 0) {
       const swing = !driving && beat % 1 === 0.5 ? 0.075 : 0;
       const jitter = beat === 0 ? 0 : (random() - 0.5) * 0.025;
@@ -90,13 +115,16 @@ export function composeScore(style: Style, bars: number, seed: number, bpm: numb
         pitch, velocity: Math.round(velocity + random() * 6), pan });
     }
     // The final downbeat resolves to tonic with room for the tails to ring.
-    const chords: Chords = last ? [[0, 2.35]] : section === 0 && localBar === 0 ? [[0, 2.6]] : comp[phraseBar];
+    const chords: Chords = last ? [[0, 2.35]] : preCadence ? [[0, 1.55], [2.5, 0.80]] :
+      section === 0 && localBar === 0 ? [[0, 2.6]] : comp[phraseBar];
     for (const [beat, length] of chords) {
       upper.forEach((pitch, voice) => {
         const finger = phraseBar % 2 ? 3 - voice : voice;
         const roll = driving ? 0.007 : 0.020 + 0.005 * phraseBar;
         const accent = (voice === 3 ? 7 : 0) - (beat >= 2 ? 8 : 0);
-        note("keys", beat + finger * roll, length, pitch, (lift ? 76 : 64) + accent, (voice - 1.5) * 0.30);
+        // Over A7, D resolves to C# on the second stab before the tonic hits.
+        const voiced = driving && preCadence && beat === 0 && voice === 2 ? pitch + 1 : pitch;
+        note("keys", beat + finger * roll, length, voiced, (lift ? 76 : 64) + accent, (voice - 1.5) * 0.30);
       });
     }
     if (driving && lift && !turnaround) {
@@ -105,11 +133,11 @@ export function composeScore(style: Style, bars: number, seed: number, bpm: numb
       }
     }
     if (section > 0 || bar % 2 || last) {
-      const beats = last ? [0] : bassLine[phraseBar];
+      const beats = last ? [0] : preCadence ? (driving ? [0, 1, 2.5, 3.5] : [0, 2]) : bassLine[phraseBar];
       for (const [i, beat] of beats.entries()) {
-        const pickup = !last && phraseBar % 2 === 1 && i === beats.length - 1;
-        const nextRoot = harmony[bar + 1 === bars - 1 ? 7 : (bar + 1) % 8][0] + transpose;
-        const pitch = pickup ? nextRoot - (driving ? 2 : 1) : beat === 2.75 ? root + 7 : root;
+        const pickup = !last && (preCadence ? driving : phraseBar % 2 === 1) && i === beats.length - 1;
+        const nextRoot = voicings[(bar + 1) % bars][0];
+        const pitch = pickup ? nextRoot - (driving && !preCadence ? 2 : 1) : beat === 2.75 ? root + 7 : root;
         const space = (beats[i + 1] ?? 4) - beat;
         const length = last ? 2.1 : Math.min(space - 0.14, driving ? 0.46 : 1.35);
         note("bass", beat, length, pitch, pickup ? 69 : i === 0 ? 91 : 78);
@@ -120,15 +148,21 @@ export function composeScore(style: Style, bars: number, seed: number, bpm: numb
       if (driving) note("drums", 0, 0.3, 36, 72);
       continue;
     }
-    if (section === 1 || lift || bar % 2 === 1) {
-      const phrase = phrases[phraseBar];
+    if (preCadence) {
+      // Minor iv gives the major cue a borrowed sixth. The minor cue delays its leading tone.
+      const tonic = voicings[bars - 1][0] + 36;
+      note("lead", driving ? 1.5 : 0.75, driving ? 0.55 : 1.25, tonic - (driving ? 5 : 4), 68, 0.12);
+      note("lead", driving ? 3.25 : 2.5, driving ? 0.42 : 0.86, tonic - (driving ? 1 : 5), 61, 0.12);
+    } else if (section === 1 || lift || bar % 2 === 1) {
+      const liftAnswer = lift && phraseBar === 1;
+      const phrase = liftAnswer ? (driving ? nightLiftAnswer : velvetLiftAnswer) : phrases[phraseBar];
       for (const [i, [beat, length, degree]] of phrase.entries()) {
         if ((section === 0 || section === 3) && i > 1) break;
         if (turnaround && i > 0 && !lift) break;
         // On a second four-bar pass, recast the answer over the changing harmony.
         const variation = (lift || localBar >= 4) && phraseBar % 2 ? answerOffset : 0;
         if (localBar >= 4 && i === 1 && phraseBar === 2) continue;
-        const index = (degree + motifOffset + variation) % 4;
+        const index = liftAnswer ? degree : (degree + motifOffset + variation) % 4;
         const accent = i === 0 ? 7 : length < 0.5 ? -7 : 2;
         note("lead", beat, length, upper[index] + 12, (lift ? 81 : 71) + accent, 0.12);
       }

@@ -1,6 +1,13 @@
-// Extract the zones used by our own curated bank at build time. MIDI rendering on
-// the server keeps using the SF2, so both entry points share one sample source.
-export function browserBank(sf2) {
+export const bundledBankURL = new URL("../assets/cc0/instruments.sf2", import.meta.url);
+
+/**
+ * Read the PCM and zones of the bundled mono SF2 created by build_cc0_bank.py.
+ * @param {Buffer} sf2
+ * @returns {{ pcm: Buffer, zones: Array<{ instrument: string, low: number, high: number,
+ *   soft: number, loud: number, release: number, start: number, end: number,
+ *   rate: number, root: number }> }}
+ */
+export function readSampleBank(sf2) {
   const chunks = new Map();
   function visit(start, end) {
     for (let p = start; p + 8 <= end;) {
@@ -36,7 +43,11 @@ export function browserBank(sf2) {
           type = gens.readUInt16LE(at);
         if (type === 43) [zone.low, zone.high] = gens.subarray(at + 2, at + 4);
         if (type === 44) [zone.soft, zone.loud] = gens.subarray(at + 2, at + 4);
-        if (type === 38) zone.release = 2 ** (gens.readInt16LE(at + 2) / 1200);
+        if (type === 38) {
+          const seconds = 2 ** (gens.readInt16LE(at + 2) / 1200);
+          // JS runtimes can round the power differently. Keep the bundled release ID reproducible.
+          zone.release = Math.round(seconds * 1e9) / 1e9;
+        }
         if (type === 53) {
           const s = 46 * gens.readUInt16LE(at + 2);
           zone.start = samples.readUInt32LE(s + 20);

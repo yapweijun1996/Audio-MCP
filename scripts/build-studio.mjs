@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { browserBank } from "./web-bank.mjs";
+import { bundledBankURL, readSampleBank } from "../src/sample-bank.js";
 const root = new URL("../", import.meta.url);
 const cwd = fileURLToPath(root),
   out = new URL("dist/studio/", root);
@@ -15,7 +15,7 @@ function asset(label, ext, bytes) {
   files.set(name, bytes);
   return name;
 }
-const bank = browserBank(await read("assets/cc0/instruments.sf2"));
+const bank = readSampleBank(await readFile(bundledBankURL));
 const sampleURL = asset("recordings", "pcm", bank.pcm);
 const regions = JSON.parse(await read("assets/chamber/regions.json"));
 const chamberBanks = {};

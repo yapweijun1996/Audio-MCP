@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { endianness } from "node:os";
 import { join } from "node:path";
 import { pcmHeader } from "./audio.js";
+import { renderAcousticDrums } from "./acoustic-drums.js";
 import { ppq } from "./midi.js";
 import { stemNames, type Note, type Score, type Stem } from "./score.js";
 
@@ -65,18 +66,18 @@ function playNote(buffer: Float32Array, part: Stem, note: Note, score: Score, vo
       const high = noise - previousNoise;
       previousNoise = noise;
       lowNoise += 0.08 * (noise - lowNoise);
-      noiseBand += (drive ? 0.57 : 0.38) * (noise - lowNoise - noiseBand);
+      noiseBand += 0.57 * (noise - lowNoise - noiseBand);
       if (note.pitch === 36) {
         kickPhase += (47 + 113 * transient ** 4) / rate;
         sample = 0.58 * sine(kickPhase) + 0.025 * high * transient ** 8;
       } else if (note.pitch === 38) {
-        const wires = drive && i < rate * 0.014 ? 0.40 : 1;
-        sample = (drive ? 0.78 : 0.48) * wires * noiseBand +
+        const wires = i < rate * 0.014 ? 0.40 : 1;
+        sample = 0.78 * wires * noiseBand +
           (0.18 * sine(i * 183 / rate) + 0.072 * sine(i * 327 / rate)) * transient;
       } else {
         const metal = sine(i * 4177 / rate) * sine(i * 6371 / rate);
-        sample = (drive ? 0.28 : 0.14) * noiseBand + 0.055 * high +
-          (drive ? 0.13 : 0.08) * metal;
+        sample = 0.28 * noiseBand + 0.055 * high +
+          0.13 * metal;
       }
       sample *= drumLevel;
       drumLevel *= drumDecay;
@@ -158,7 +159,11 @@ const mix = new Float32Array(frames * 2);
 const stem = new Float32Array(mix.length);
 for (const part of stemNames) {
   stem.fill(0);
-  score.parts[part].forEach((note, index) => playNote(stem, part, note, score, score.seed + index));
+  if (part === "drums" && score.style === "velvet_keys") {
+    await renderAcousticDrums(stem, score.parts.drums, score.tempo / (1e6 * ppq), rate, score.seed);
+  } else {
+    score.parts[part].forEach((note, index) => playNote(stem, part, note, score, score.seed + index));
+  }
   finishStem(stem, part, score.tempo / 1e6);
   for (let i = 0; i < mix.length; i++) mix[i] += stem[i];
   if (exportStems === "stems") await writeFile(join(dir, part + ".wav"), stemWav(stem), { mode: 0o600 });

@@ -2,11 +2,12 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cc0BankTag } from "./midi.js";
+import { bundledBankURL } from "./sample-bank.js";
 import { runProgram } from "./program.js";
 import { parseMidi } from "midi-file";
 import { analyze } from "./audio.js";
 
-const cc0Bank = fileURLToPath(new URL("../assets/cc0/instruments.sf2", import.meta.url));
+const cc0Bank = fileURLToPath(bundledBankURL);
 const macPianoBank = "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls";
 export const maxRenderSeconds = 300.01;
 

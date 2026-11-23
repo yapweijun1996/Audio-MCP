@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyze, pcmHeader } from "./audio.js";
 import { ppq } from "./midi.js";
@@ -10,7 +10,7 @@ import { composeScore, scoreMidi, stemNames, type Style } from "./score.js";
 const worker = fileURLToPath(new URL("./score-worker.js", import.meta.url));
 const rate = 48000;
 
-async function master(dir: string, frames: number, target: number, signal: AbortSignal) {
+export async function masterMusicMix(dir: string, frames: number, target: number, signal: AbortSignal) {
   const ffmpeg = (args: string[]) => runProgram("ffmpeg", ["-nostdin", "-hide_banner", "-nostats", ...args], signal, dir);
   const source = ["-f", "f32le", "-ar", String(rate), "-ac", "2", "-i", "mix.f32"];
   const filter = "loudnorm=I=" + target + ":TP=-1.5:LRA=11";
@@ -45,35 +45,70 @@ async function master(dir: string, frames: number, target: number, signal: Abort
 
 export type MusicRequest = { style: Style; bars: number; seed: number; bpm?: number; include_stems: boolean };
 
+const assetFilename = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(wav|mid)$/;
+
+async function discardCueWork(root: string, dir: string) {
+  let names: string[] = [];
+  try {
+    names = (await readFile(join(dir, "publishing"), "utf8")).split("\n");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (!names.every(name => assetFilename.test(name))) throw new Error("Invalid cue publication journal");
+  await Promise.all(names.map(name => rm(join(root, name), { force: true })));
+  await rm(dir, { recursive: true, force: true, maxRetries: 3 });
+}
+
+async function recoverAbandonedCues(root: string) {
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const owner = /^\.produce-([1-9]\d{0,9})-[A-Za-z0-9]{6}$/.exec(entry.name);
+    if (!entry.isDirectory() || !owner) continue;
+    try {
+      process.kill(Number(owner[1]), 0);
+      continue;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") continue;
+    }
+    try {
+      await discardCueWork(root, join(root, entry.name));
+    } catch (error) {
+      // A surviving child can still have its scratch files open on Windows. Retry on the next cue.
+      console.error("Could not clean interrupted cue %s:", entry.name, (error as Error).message);
+    }
+  }
+}
+
 export async function produceMusic(root: string, request: MusicRequest, signal: AbortSignal) {
   const { style, bars, seed, include_stems } = request;
   const bpm = request.bpm ?? (style === "night_drive" ? 112 : 86);
   const score = composeScore(style, bars, seed, bpm);
   const frames = Math.round(score.ticks / ppq * score.tempo * rate / 1e6);
-  const dir = await mkdtemp(join(root, ".produce-"));
-  const published: string[] = [];
+  await recoverAbandonedCues(root);
+  const dir = await mkdtemp(join(root, `.produce-${process.pid}-`));
   try {
     await writeFile(join(dir, "score.json"), JSON.stringify(score), { mode: 0o600 });
     await writeFile(join(dir, "score.mid"), scoreMidi(score), { mode: 0o600 });
     await runProgram(process.execPath, [worker, dir, include_stems ? "stems" : "mix"], signal, dir);
-    const validation = await master(dir, frames, style === "night_drive" ? -14 : -16, signal);
+    const validation = await masterMusicMix(dir, frames, style === "night_drive" ? -14 : -16, signal);
     const roles = include_stems ? ["master", "score", ...stemNames] : ["master", "score"];
-    const assets = [];
-    for (const role of roles) {
-      signal.throwIfAborted();
+    const assets = roles.map(role => {
       const extension = role === "score" ? ".mid" : ".wav";
       const asset_id = randomUUID();
       const path = join(root, asset_id + extension);
-      await rename(join(dir, role + extension), path);
-      published.push(path);
-      assets.push({ role, asset_id, path, type: role === "score" ? "midi" : "wav" });
+      return { role, asset_id, path, type: role === "score" ? "midi" : "wav" };
+    });
+    const journal = join(dir, "publishing");
+    // Make the rollback list complete before exposing any individual file in the flat asset store.
+    await writeFile(journal + ".tmp", assets.map(asset => basename(asset.path)).join("\n"), { mode: 0o600 });
+    await rename(journal + ".tmp", journal);
+    for (const asset of assets) {
+      signal.throwIfAborted();
+      await rename(join(dir, asset.role + (asset.type === "midi" ? ".mid" : ".wav")), asset.path);
     }
     signal.throwIfAborted();
+    await unlink(journal);
     return { status: "completed", style, bars, bpm, seed, sections: score.sections, assets, validation };
-  } catch (error) {
-    await Promise.all(published.map(path => rm(path, { force: true })));
-    throw error;
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await discardCueWork(root, dir);
   }
 }
