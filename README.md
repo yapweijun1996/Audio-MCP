@@ -45,15 +45,15 @@ The test builds the server, launches it as a child process, discovers its tools 
 
 Before using a build in production, review the verified environments, outstanding checks, and rollback procedure in the [production readiness checklist](docs/production-readiness.md).
 
-To sell music for video, start with one editor's brief. The [commercial readiness checklist](docs/commercial-readiness.md) defines a 30-second cue pack, how to audition it under narration, and what would justify taking paid orders.
+For music delivery, use the [mastering, cutdown and stem checklist](docs/commercial-readiness.md).
 
 ## Produce a music cue
 
-Ask your MCP client to “produce a 16-bar night-drive instrumental with stems”. The `audio_produce_music` tool composes an intro, theme, lift and resolved ending, synthesizes four parts, and masters the stereo mix. It runs locally with Node.js and FFmpeg on PATH. Its instruments use oscillators and synthesized percussion. It requires no sound bank, model download or paid API.
+Ask your MCP client to “produce a 16-bar night-drive instrumental with stems”. The `audio_produce_music` tool composes an intro, theme, lift and resolved ending, renders four parts, and masters the stereo mix. It runs locally with Node.js and FFmpeg on PATH. Night Drive uses electronic synthesis throughout. Velvet Keys pairs synthesized electric keys, bass and lead with the bundled acoustic drum recordings. [Recording credits](assets/cc0/README.md)
 
 | Style | Sound | Full-length preview |
 | --- | --- | --- |
-| `velvet_keys` | Swung electric keys, rounded bass and a soft lead. Default 86 BPM. | [Velvet Keys · 45 s](examples/production/velvet-keys.mp3) |
+| `velvet_keys` | Swung electric keys, recorded drums and a descending bass line in the lift. Default 86 BPM. | [Velvet Keys · 45 s](examples/production/velvet-keys.mp3) · [24-bit WAV](examples/production/velvet-keys.wav) |
 | `night_drive` | A straight electronic pulse with syncopated bass and a brighter hook. Default 112 BPM. | [Night Drive · 34 s](examples/production/night-drive.mp3) |
 
 ```json
@@ -63,6 +63,16 @@ Ask your MCP client to “produce a 16-bar night-drive instrumental with stems�
 Choose 8, 16 or 32 bars and optionally set `bpm` from 72 to 128. The default is a 16-bar `velvet_keys` cue with seed 1. The same inputs reproduce the score. In the result, select assets by `role`. Use `master` for the finished 48 kHz, 24-bit stereo WAV and `score` for editable multitrack MIDI. Optional `drums`, `bass`, `keys` and `lead` WAVs start at the same sample and end together. Import the four stems at time zero for remixing. They include their individual effects and precede master-bus processing.
 
 Each master is measured after export. The project targets −16 LUFS for Velvet Keys and −14 LUFS for Night Drive. Delivery requires integrated loudness within 1 LU of the style target and true peak at or below −1 dBTP. The result includes both measurements and the section start bars. Pass any returned WAV ID to `audio_analyze` for duration, channel count and sample peak. [FFmpeg loudness measurement](https://ffmpeg.org/ffmpeg-filters.html#loudnorm)
+
+### Download or render an editor pack
+
+The [Night Drive WAV pack](examples/production/night-drive-editor.zip) includes a 30-second master, a 15-second cut from the same performance, a 30-second underscore for dialogue, four aligned stems and the multitrack MIDI score. The manifest lists edit points, measured levels and file hashes. [Hear the underscore in a narrated picture edit](examples/production/last-tram.mp4)
+
+After building, render another take to a new directory. The optional second argument is the seed. The pack runs at 128 BPM to fit the two durations exactly.
+
+```sh
+node scripts/render-editor-pack.mjs audio-assets/night-drive-42 42
+```
 
 ## Connect a client
 

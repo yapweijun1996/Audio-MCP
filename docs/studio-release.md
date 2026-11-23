@@ -32,6 +32,8 @@ The app install action uses the browser prompt when available and provides platf
 
 ## Qualification
 
+The release build rounds SF2 envelope release times to nanoseconds before bundling. On macOS arm64, Node 22.23.3, 23.10.0 and 24.21.0 produced the same 20 static files and build ID `bdb35eeba0c262d3` with the locked dependencies. The public deployment above records the preceding build.
+
 The final native render-enabled npm test run passed all 14 checks. The acoustic release exercised ten browser workflows across Chromium, Firefox and emulated iPhone WebKit, including offline stereo export, multitrack MIDI and deterministic score variations. The original Firefox run exceeded the 65-second test-case limit on this host. Its three workflows passed on rerun, with two using a 180-second total case budget and the same assertions. The three featured WAVs measured −15.7, −16.5 and −16.6 LUFS for film, café and solo piano, with true peaks near −1.1 dBTP.
 
 The 2026-11-22 local candidate has web build ID `277a82456af2c6d2`. A clean dependency install reproduced the same worker digest. The three-engine browser suite passed all seven cases, and the production/render-enabled Node suite passed all 13 tests. The packaged archive was opened independently and checked against every precache hash. Its SHA-256 digest is `2bf3fd30d2a7005d054492514a5ed19f064677f9b752d6b842be0765d02afc60` for this particular archive.
