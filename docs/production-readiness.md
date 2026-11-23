@@ -2,6 +2,8 @@
 
 Use this checklist for a trusted local MCP client that launches Audio MCP over stdio, with one OS account owning the asset directory. Piano MIDI and sound effects run in Node.js. Piano MIDI rendering adds FluidSynth, FFmpeg and a readable General MIDI sound bank. The arranged music producer uses Node.js and FFmpeg with the `loudnorm` filter.
 
+For a release that sells finished cues, also verify musical fit, buyer permissions, order delivery and paid demand using the [commercial readiness checklist](commercial-readiness.md).
+
 ## Arranged music acceptance
 
 On 2026-11-23, a Linux arm64 stdio server with Node 22.23.5 and FFmpeg 8.1.3 produced the two revised 16-bar previews below and read back the master and four stems by asset ID. The delivered WAVs use stereo 48 kHz, 24-bit PCM. Measurements are from the final WAVs before encoding the MP3 previews.

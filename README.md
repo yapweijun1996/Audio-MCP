@@ -17,6 +17,8 @@ The test builds the server, launches it as a child process, discovers its tools 
 
 Before using a build in production, review the verified environments, outstanding checks, and rollback procedure in the [production readiness checklist](docs/production-readiness.md).
 
+To sell music for video, start with one editor's brief. The [commercial readiness checklist](docs/commercial-readiness.md) defines a 30-second cue pack, how to audition it under narration, and what would justify taking paid orders.
+
 ## Produce a music cue
 
 Ask your MCP client to “produce a 16-bar night-drive instrumental with stems”. The `audio_produce_music` tool composes an intro, theme, lift and resolved ending, synthesizes four parts, and masters the stereo mix. It runs locally with Node.js and FFmpeg on PATH. Its instruments use oscillators and synthesized percussion. It requires no sound bank, model download or paid API.
